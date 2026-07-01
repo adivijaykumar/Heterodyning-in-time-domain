@@ -4,8 +4,8 @@ Time-domain gravitational-wave likelihood using **relative binning (heterodyning
 
 This code accompanies the paper:
 
-> **Heterodyning in the time domain for gravitational-wave parameter estimation**  
-> Neha Sharma, Aditya Vijaykumar et al.  
+> **Rapid inference of gravitational-wave signals in the time domain using a heterodyned likelihood**  
+> Neha Sharma, Aditya Vijaykumar, Prayush Kumar  
 > [arXiv:2601.11239](https://arxiv.org/abs/2601.11239)
 
 ---
@@ -197,8 +197,8 @@ If you use this code, please cite:
 
 ```bibtex
 @article{sharma2026heterodyning,
-  title   = {Heterodyning in the time domain for gravitational-wave parameter estimation},
-  author  = {Sharma, Neha and Vijaykumar, Aditya and others},
+  title   = {Rapid inference of gravitational-wave signals in the time domain using a heterodyned likelihood},
+  author  = {Sharma, Neha and Vijaykumar, Aditya and Kumar, Prayush},
   journal = {arXiv preprint},
   year    = {2026},
   eprint  = {2601.11239},
