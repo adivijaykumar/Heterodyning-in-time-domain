@@ -7,6 +7,10 @@ import numpy as np
 import lalsimulation as ls
 import lal
 from scipy.linalg import matmul_toeplitz
+import sys
+import os
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'ACF_noise_and_covariance_matrix_data'))
+from covariance_solver import ToeplitzSolver
 
 print(ls.__file__)
 
@@ -45,6 +49,7 @@ class ExactLikelihoodTimeDomainGeocentTimeFrame(bilby.Likelihood):
         fmin=10,
         fref=10,
         modes_to_activate=[(2, 2)],
+        solver=None,
     ):
         super().__init__(parameters={})
         self.time = time
@@ -53,6 +58,11 @@ class ExactLikelihoodTimeDomainGeocentTimeFrame(bilby.Likelihood):
         self.x = x
         self.y = y
         self.Noise = Noise
+        # Build solver dict: use provided solvers or fall back to ToeplitzSolver(x[k], y[k])
+        if solver is not None:
+            self.solver = solver
+        else:
+            self.solver = {k: ToeplitzSolver(x[k], y[k]) for k in (Detectors_list or {})}
         self._Data_list = Data_list if Data_list else {}
         self.modes_to_activate = modes_to_activate
         self.noise_log_likelihood_value = None
@@ -63,21 +73,8 @@ class ExactLikelihoodTimeDomainGeocentTimeFrame(bilby.Likelihood):
         self.compute_SNR_TD_and_waveform_data()
 
     def Inner_product_C_inv_vector(self, x, y, v):
-        product = (1 / x[0]) * (
-            matmul_toeplitz(
-                (x, np.concatenate((np.array([x[0]]), np.zeros(len(x) - 1)))),
-                matmul_toeplitz(
-                    (np.concatenate((np.array([x[0]]), np.zeros(len(x) - 1))), x), v
-                ),
-            )
-            - matmul_toeplitz(
-                (np.concatenate((np.array([0]), y[:-1])), np.zeros(len(y))),
-                matmul_toeplitz(
-                    (np.zeros(len(x)), np.concatenate((np.array([0]), y[:-1]))), v
-                ),
-            )
-        )
-        return product
+        """Legacy interface: preserved for backward compatibility."""
+        return ToeplitzSolver(x, y).apply_C_inv(v)
 
     @property
     def injection_parameters(self):
@@ -150,7 +147,7 @@ class ExactLikelihoodTimeDomainGeocentTimeFrame(bilby.Likelihood):
                     + self.Noise[k]
                 )
                 self.Data_list[k] = data
-            data_times_C_inv[k] = self.Inner_product_C_inv_vector(self.x[k], self.y[k], self.Data_list[k])
+            data_times_C_inv[k] = self.solver[k].apply_C_inv(self.Data_list[k])
             data_times_C_inv_times_data[k] = np.matmul(
                 data_times_C_inv[k], self.Data_list[k]
             )
@@ -165,8 +162,8 @@ class ExactLikelihoodTimeDomainGeocentTimeFrame(bilby.Likelihood):
             signal = Antenna_pattern_dict[k]["F_plus"] * np.real(
                 self.h_injection[k]
             ) + Antenna_pattern_dict[k]["F_cross"] * (-np.imag(self.h_injection[k]))
-            hh = self.weighted_inner_product_circulant(self.x[k], self.y[k], signal, signal)
-            dh = self.weighted_inner_product_circulant(self.x[k], self.y[k], self.Data_list[k], signal)
+            hh = np.dot(signal, self.solver[k].apply_C_inv(signal))
+            dh = np.dot(self.Data_list[k], self.solver[k].apply_C_inv(signal))
             SNR = np.abs(dh) / np.sqrt(np.abs(hh))
             SNR_arr.append(SNR)
             SNR_dict[k] = SNR
