@@ -5,14 +5,7 @@
 #   bash scripts/build_lal_wheels.sh
 #
 # After this succeeds, run the full test suite with:
-#   uv run --group test pytest tests/ -v
-#
-# What this script does:
-#   1. Checks / installs build dependencies (cmake, swig, gsl, fftw)
-#   2. Clones neha2023sharma/lalsuite at the pinned commit
-#   3. Builds lal + lalsimulation C libraries with cmake
-#   4. Builds Python wheels for lal and lalsimulation
-#   5. Places wheels in ./lal-wheels/ (referenced by pyproject.toml)
+#   uv run --group test-integration pytest tests/test_likelihood.py -v
 
 set -euo pipefail
 
@@ -20,39 +13,39 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 LAL_FORK="https://github.com/neha2023sharma/lalsuite.git"
 LAL_COMMIT="a13e410022d5db89c64983c2bf9c1c1da54f7cdb"
 BUILD_DIR="$REPO_ROOT/.lal-build"
+CLONE_DIR="$BUILD_DIR/lalsuite"
 INSTALL_PREFIX="$BUILD_DIR/install"
 WHEEL_DIR="$REPO_ROOT/lal-wheels"
-CLONE_DIR="$BUILD_DIR/lalsuite"
-NCPU=$(sysctl -n hw.physicalcpu 2>/dev/null || nproc 2>/dev/null || echo 4)
+NCPU=$(sysctl -n hw.physicalcpu 2>/dev/null || echo 4)
 
-# ── 1. System dependencies ──────────────────────────────────────────────────
+# ── 1. System dependencies ────────────────────────────────────────────────────
 
 echo "==> Checking build dependencies..."
 
 missing=()
-command -v cmake   &>/dev/null || missing+=(cmake)
-command -v swig    &>/dev/null || missing+=(swig)
+command -v autoconf  &>/dev/null || missing+=(autoconf)
+command -v automake  &>/dev/null || missing+=(automake)
+command -v libtool   &>/dev/null || missing+=(libtool)
+command -v swig      &>/dev/null || missing+=(swig)
 command -v gsl-config &>/dev/null || missing+=(gsl)
-command -v pkg-config &>/dev/null || missing+=(pkg-config)
-# fftw3 — check via pkg-config
-pkg-config --exists fftw3 2>/dev/null || missing+=(fftw)
+pkg-config --exists fftw3 2>/dev/null  || missing+=(fftw)
 
 if [ ${#missing[@]} -gt 0 ]; then
-    echo "==> Installing missing dependencies via Homebrew: ${missing[*]}"
+    echo "==> Installing via Homebrew: ${missing[*]}"
     brew install "${missing[@]}"
 fi
 
-echo "==> cmake:  $(cmake --version | head -1)"
-echo "==> swig:   $(swig -version 2>&1 | head -1)"
-echo "==> gsl:    $(gsl-config --version)"
-echo "==> fftw3:  $(pkg-config --modversion fftw3)"
+echo "    autoconf: $(autoconf --version | head -1)"
+echo "    automake: $(automake --version | head -1)"
+echo "    swig:     $(swig -version 2>&1 | head -1)"
+echo "    gsl:      $(gsl-config --version)"
+echo "    fftw3:    $(pkg-config --modversion fftw3)"
 
-# ── 2. Clone ─────────────────────────────────────────────────────────────────
+# ── 2. Clone ──────────────────────────────────────────────────────────────────
 
 mkdir -p "$BUILD_DIR"
 if [ -d "$CLONE_DIR/.git" ]; then
-    echo "==> lalsuite already cloned; checking out pinned commit..."
-    git -C "$CLONE_DIR" fetch origin
+    echo "==> lalsuite already cloned at $CLONE_DIR"
 else
     echo "==> Cloning lalsuite fork..."
     git clone "$LAL_FORK" "$CLONE_DIR"
@@ -60,85 +53,118 @@ fi
 git -C "$CLONE_DIR" checkout "$LAL_COMMIT"
 echo "==> At commit: $(git -C "$CLONE_DIR" rev-parse HEAD)"
 
-# ── 3. CMake configure ───────────────────────────────────────────────────────
+# ── 3. Build helper ───────────────────────────────────────────────────────────
 
-echo "==> Configuring with cmake..."
-cmake -B "$BUILD_DIR/cmake-build" -S "$CLONE_DIR" \
-    -DCMAKE_INSTALL_PREFIX="$INSTALL_PREFIX" \
-    -DCMAKE_BUILD_TYPE=Release \
-    -DLAL_ENABLE_SWIG=ON \
-    -DLAL_ENABLE_SWIG_PYTHON=ON \
-    -Dlal_ENABLE_SWIG_PYTHON=ON \
-    -Dlalsimulation_ENABLE_SWIG_PYTHON=ON \
-    -DLAL_PYTHON=ON \
-    -Dlal_PYTHON=ON \
-    -Dlalsimulation_PYTHON=ON \
-    -DENABLE_OPENMP=OFF \
-    -DLALFRAME=OFF \
-    -DLALMETAIO=OFF \
-    -DLALBURST=OFF \
-    -DLALINSPIRAL=OFF \
-    -DLALPULSAR=OFF \
-    -DLALINFERENCE=OFF \
-    -DLALDETCHAR=OFF \
-    -DLALSTOCHASTIC=OFF \
-    -DLALXML=OFF \
-    2>&1 | tail -20
+build_package () {
+    local pkg="$1"          # e.g. "lal" or "lalsimulation"
+    local extra_flags="${2:-}"
+    local src="$CLONE_DIR/$pkg"
+    local bld="$BUILD_DIR/$pkg-build"
 
-# ── 4. Build ─────────────────────────────────────────────────────────────────
+    echo ""
+    echo "══ Building $pkg ══════════════════════════════════════════════════"
 
-echo "==> Building lal and lalsimulation (using $NCPU cores)..."
-cmake --build "$BUILD_DIR/cmake-build" \
-    --target lal lalsimulation \
-    --parallel "$NCPU"
-
-echo "==> Installing to $INSTALL_PREFIX..."
-cmake --install "$BUILD_DIR/cmake-build" --component lal
-cmake --install "$BUILD_DIR/cmake-build" --component lalsimulation
-
-# ── 5. Build Python wheels ───────────────────────────────────────────────────
-
-echo "==> Building Python wheels..."
-mkdir -p "$WHEEL_DIR"
-
-# The Python packages live under the install prefix's site-packages.
-# We build wheels from the source Python directories (which cmake populates
-# with the compiled _swig extension .so files after install).
-PYTHON_PKGS=(
-    "$CLONE_DIR/lal/python/lal"
-    "$CLONE_DIR/lalsimulation/python/lalsimulation"
-)
-
-# Add the install prefix to the library search path so the extension modules
-# can find libla*.dylib at wheel-build time.
-export DYLD_LIBRARY_PATH="$INSTALL_PREFIX/lib:${DYLD_LIBRARY_PATH:-}"
-export PKG_CONFIG_PATH="$INSTALL_PREFIX/lib/pkgconfig:${PKG_CONFIG_PATH:-}"
-
-for pkg_src in "${PYTHON_PKGS[@]}"; do
-    if [ ! -d "$pkg_src" ]; then
-        echo "ERROR: Expected Python package directory not found: $pkg_src"
-        echo "  The cmake build may place it elsewhere — check $CLONE_DIR"
-        exit 1
+    # Bootstrap (generate configure script from configure.ac)
+    if [ ! -f "$src/configure" ]; then
+        echo "==> Running autoreconf in $src..."
+        (cd "$src" && LIBTOOLIZE=true autoreconf --install --force 2>&1)
     fi
-    echo "==> Building wheel for $(basename "$pkg_src")..."
-    uv pip wheel "$pkg_src" \
-        --wheel-dir "$WHEEL_DIR" \
-        --no-deps \
-        --config-setting="--build-option=--library-dir=$INSTALL_PREFIX/lib"
-done
+
+    mkdir -p "$bld"
+    echo "==> Configuring $pkg..."
+    (cd "$bld" && "$src/configure" \
+        --prefix="$INSTALL_PREFIX" \
+        --enable-swig-python \
+        --disable-doxygen \
+        --disable-gcc-flags \
+        PKG_CONFIG_PATH="$INSTALL_PREFIX/lib/pkgconfig:$(brew --prefix)/lib/pkgconfig" \
+        LDFLAGS="-L$INSTALL_PREFIX/lib" \
+        CPPFLAGS="-I$INSTALL_PREFIX/include" \
+        $extra_flags \
+        2>&1 | tail -5)
+
+    echo "==> Building $pkg (using $NCPU cores)..."
+    make -C "$bld" -j"$NCPU" 2>&1 | tail -5
+
+    echo "==> Installing $pkg..."
+    make -C "$bld" install 2>&1 | tail -3
+}
+
+# ── 4. Build lal then lalsimulation ──────────────────────────────────────────
+
+build_package "lal"
+build_package "lalsimulation"
+
+# ── 5. Point the uv venv at the installed packages via a .pth file ───────────
+# The compiled lal/lalsimulation Python packages (including the .so SWIG
+# extensions) are already installed under $INSTALL_PREFIX. Rather than
+# repackaging them into wheels, we add their parent directory to the uv
+# venv's sys.path via a .pth file, and set DYLD_LIBRARY_PATH so the
+# extensions can find the shared C libraries at runtime.
 
 echo ""
-echo "✓ Wheels written to $WHEEL_DIR:"
-ls "$WHEEL_DIR"/*.whl
-
-# ── 6. Install wheels + integration deps into the uv venv ───────────────────
-
-echo ""
-echo "==> Installing lal wheels into uv venv..."
+echo "==> Syncing uv test-integration env..."
 cd "$REPO_ROOT"
 uv sync --group test-integration
-uv pip install "$WHEEL_DIR"/*.whl
+
+PY_VER=$(uv run python -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")')
+INSTALLED_PY="$INSTALL_PREFIX/lib/python${PY_VER}/site-packages"
+
+if [ ! -d "$INSTALLED_PY/lal" ]; then
+    echo "ERROR: expected lal Python package not found at $INSTALLED_PY/lal"
+    echo "  Check that the autotools build installed Python bindings."
+    exit 1
+fi
+
+VENV_SITE=$(uv run python -c "import site; print(site.getsitepackages()[0])")
+PTH_FILE="$VENV_SITE/lal-custom.pth"
+
+echo "==> Writing .pth file: $PTH_FILE"
+echo "$INSTALLED_PY" > "$PTH_FILE"
+
+# The venv may contain a stale lalsimulation .so (installed by a previous uv sync
+# or manual pip install) that shadows our freshly built one.  uv installs name the
+# extension _lalsimulation.cpython-3XX-darwin.so while ours is _lalsimulation.so;
+# Python picks the cpython-named file first.  Replace it with our build.
+echo "==> Replacing stale lal/lalsimulation in venv with freshly built versions..."
+for pkg in lal lalsimulation; do
+    SRC="$INSTALLED_PY/$pkg"
+    DST="$VENV_SITE/$pkg"
+    if [ -d "$DST" ]; then
+        # Copy the freshly built .so files over any cpython-named stale copies
+        for so_src in "$SRC"/*.so; do
+            so_name=$(basename "$so_src")
+            # Also replace the cpython-tagged variant if it exists
+            cpython_so=$(ls "$DST"/_*cpython*.so 2>/dev/null | head -1)
+            if [ -n "$cpython_so" ]; then
+                echo "    replacing $(basename "$cpython_so") in $pkg"
+                cp "$so_src" "$cpython_so"
+            fi
+            cp "$so_src" "$DST/$so_name"
+        done
+        # Copy any updated .py files
+        cp "$SRC"/*.py "$DST/"
+    fi
+done
+
+# Also write a small activation snippet so DYLD_LIBRARY_PATH is set when
+# running tests — stored as a conftest.py hook.
+CONFTEST="$REPO_ROOT/tests/conftest.py"
+cat > "$CONFTEST" <<PYEOF
+# Auto-generated by scripts/build_lal_wheels.sh — do not edit manually.
+# Sets DYLD_LIBRARY_PATH so lal's .so extensions find their C libraries.
+import os
+os.environ.setdefault(
+    "DYLD_LIBRARY_PATH",
+    "$INSTALL_PREFIX/lib" + ":" + os.environ.get("DYLD_LIBRARY_PATH", ""),
+)
+PYEOF
 
 echo ""
-echo "✓ Done. Run the full test suite with:"
+echo "✓ lal installed at:   $INSTALLED_PY/lal"
+echo "✓ lalsimulation at:   $INSTALLED_PY/lalsimulation"
+echo "✓ .pth:               $PTH_FILE"
+echo "✓ conftest.py:        $CONFTEST"
+echo ""
+echo "✓ Done. Run integration tests with:"
 echo "  uv run --group test-integration pytest tests/test_likelihood.py -v"

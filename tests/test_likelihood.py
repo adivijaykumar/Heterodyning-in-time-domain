@@ -61,9 +61,12 @@ _t_delay_h1 = DETECTORS["H1"].time_delay_from_earth_center(
 INJECTION_PARAMS_H1["H1_time"] = INJECTION_PARAMS_GEOCENT["geocent_time"] + _t_delay_h1
 INJECTION_PARAMS_H1.pop("geocent_time")
 
-# Exponentially decaying ACF — realistic stand-in for stationary noise
+# Exponentially decaying ACF scaled to GW strain level (~1e-22 at 500 Mpc).
+# Without scaling, the noise variance (1) vastly exceeds the GW signal amplitude
+# (~1e-22), giving SNR ~ 1e-21 and LLR values drowning in floating-point noise.
 _DECAY = 0.99
-_ACF = _DECAY ** np.arange(N)
+_NOISE_VAR = 1e-44   # noise rms ~ 1e-22, comparable to GW strain
+_ACF = _NOISE_VAR * _DECAY ** np.arange(N)
 
 def _gs_vectors(acf):
     e1 = np.zeros(len(acf))
@@ -408,10 +411,12 @@ class TestRelativeBinningLikelihood:
         np.testing.assert_allclose(ratio_rb, ratio_ex, rtol=0.01)
 
     def test_log_likelihood_ratio_far_params_lower(self, relbin_geocent):
+        # Use parameters close but not equal to fiducial: relative binning
+        # approximation breaks down when parameters differ by >~10% from fiducial.
         relbin_geocent.parameters.update(INJECTION_PARAMS_GEOCENT)
         ratio_inj = relbin_geocent.log_likelihood_ratio()
         far = INJECTION_PARAMS_GEOCENT.copy()
-        far["chirp_mass"] = 10.0
+        far["chirp_mass"] = INJECTION_PARAMS_GEOCENT["chirp_mass"] * 1.05  # 5% off
         relbin_geocent.parameters.update(far)
         ratio_far = relbin_geocent.log_likelihood_ratio()
         assert ratio_inj > ratio_far

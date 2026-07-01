@@ -486,15 +486,10 @@ class RelativeBinningLikelihood22(TimeDomainLikelihoodBase):
         for k, det in self.Detectors_list.items():
             A_0, A_1, B_0, B_1, B_2, B_3 = self.Summary_data_dict[k]
 
-            t_delay = self._time_delay(self.parameters, det)
             h22 = self.waveform_22_modes(
                 self.parameters,
-                self.time_on_edge[k]
-                - (
-                    t_delay
-                    + self.parameters[self._time_key]
-                    - self.injection_parameters[self._time_key]
-                ),
+                self.time[self.bin_edge_index[k]]
+                - (self.parameters[self._time_key] - self.injection_parameters[self._time_key]),
             )
 
             F_plus, F_cross = self._antenna_pattern(self.parameters, det)
