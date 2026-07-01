@@ -206,3 +206,170 @@ class TestBinningGeometry:
         # All edge times should lie within the input time range
         assert t_edges[0] >= T_insp[0]
         assert t_edges[-1] <= T_insp[-1]
+
+    def test_edge_indices_in_bounds(self):
+        T_insp = self.T[self.T < 0]
+        _, edges, _, _, _ = _setup_bins_inspiral(T_insp, -0.1, np.array([0.5, 0.1]))
+        assert np.all(edges >= 0)
+        assert np.all(edges < len(T_insp))
+
+    def test_edge_indices_unique(self):
+        T_insp = self.T[self.T < 0]
+        _, edges, _, _, _ = _setup_bins_inspiral(T_insp, -0.1, np.array([0.5, 0.1]))
+        assert len(edges) == len(np.unique(edges))
+
+    def test_bin_widths_sum_to_total_span(self):
+        T_insp = self.T[self.T < 0]
+        _, edges, _, widths, t_edges = _setup_bins_inspiral(T_insp, -0.1, np.array([0.5, 0.1]))
+        expected = t_edges[-1] - t_edges[0]
+        np.testing.assert_allclose(np.sum(widths), expected, rtol=1e-12)
+
+
+# ---------------------------------------------------------------------------
+# GS formula with complex inputs (GW waveforms are complex)
+# ---------------------------------------------------------------------------
+
+class TestGSFormulaComplex:
+
+    def test_complex_vector(self):
+        n = 128
+        C, acf = _make_toeplitz_spd(n)
+        x, y = _gs_vectors(acf)
+        v = RNG.standard_normal(n) + 1j * RNG.standard_normal(n)
+        got = gs_apply_C_inv(x, y, v)
+        # C is real-symmetric, so C^{-1}(a+ib) = C^{-1}a + i*C^{-1}b
+        ref = np.linalg.solve(C, v.real) + 1j * np.linalg.solve(C, v.imag)
+        np.testing.assert_allclose(got, ref, rtol=1e-5)
+
+    def test_complex_matrix(self):
+        n = 128
+        C, acf = _make_toeplitz_spd(n)
+        x, y = _gs_vectors(acf)
+        V = RNG.standard_normal((n, 4)) + 1j * RNG.standard_normal((n, 4))
+        got = gs_apply_C_inv(x, y, V)
+        ref = np.linalg.solve(C, V.real) + 1j * np.linalg.solve(C, V.imag)
+        np.testing.assert_allclose(got, ref, rtol=1e-5)
+
+    def test_inner_product_real_for_hermitian_pair(self):
+        # <v, C^{-1} v>_C = v^† C^{-1} v should be real and positive for SPD C
+        n = 64
+        C, acf = _make_toeplitz_spd(n)
+        x, y = _gs_vectors(acf)
+        v = RNG.standard_normal(n) + 1j * RNG.standard_normal(n)
+        ip = np.real(np.dot(v.conj(), gs_apply_C_inv(x, y, v)))
+        assert ip > 0
+
+    def test_scaling_linearity(self):
+        n = 64
+        C, acf = _make_toeplitz_spd(n)
+        x, y = _gs_vectors(acf)
+        v = RNG.standard_normal(n)
+        alpha = 3.7
+        got = gs_apply_C_inv(x, y, alpha * v)
+        ref = alpha * gs_apply_C_inv(x, y, v)
+        np.testing.assert_allclose(got, ref, rtol=1e-14)
+
+
+# ---------------------------------------------------------------------------
+# GS formula — numerical properties
+# ---------------------------------------------------------------------------
+
+class TestGSNumerical:
+
+    def test_condition_number_consistency(self):
+        # For a well-conditioned Toeplitz matrix, GS and numpy should agree
+        # even at modest precision.
+        n = 256
+        C, acf = _make_toeplitz_spd(n, decay=0.5)  # fast decay → well-conditioned
+        x, y = _gs_vectors(acf)
+        V = RNG.standard_normal((n, 8))
+        got = gs_apply_C_inv(x, y, V)
+        ref = np.linalg.solve(C, V)
+        np.testing.assert_allclose(got, ref, rtol=1e-5)
+
+    def test_poorly_conditioned_still_close(self):
+        # decay=0.999 → near-singular; allow looser tolerance
+        n = 128
+        C, acf = _make_toeplitz_spd(n, decay=0.999)
+        x, y = _gs_vectors(acf)
+        v = RNG.standard_normal(n)
+        got = gs_apply_C_inv(x, y, v)
+        ref = np.linalg.solve(C, v)
+        np.testing.assert_allclose(got, ref, rtol=1e-3)
+
+    def test_additivity(self):
+        n = 64
+        C, acf = _make_toeplitz_spd(n)
+        x, y = _gs_vectors(acf)
+        v1 = RNG.standard_normal(n)
+        v2 = RNG.standard_normal(n)
+        got = gs_apply_C_inv(x, y, v1 + v2)
+        ref = gs_apply_C_inv(x, y, v1) + gs_apply_C_inv(x, y, v2)
+        np.testing.assert_allclose(got, ref, rtol=1e-12)
+
+    @pytest.mark.parametrize("n", [32, 64, 256, 1024])
+    def test_scales_with_n(self, n):
+        # Smoke test: GS must return the correct shape for various lengths
+        _, acf = _make_toeplitz_spd(n)
+        x, y = _gs_vectors(acf)
+        v = RNG.standard_normal(n)
+        result = gs_apply_C_inv(x, y, v)
+        assert result.shape == (n,)
+
+
+# ---------------------------------------------------------------------------
+# Weighted inner product properties
+# ---------------------------------------------------------------------------
+
+class TestWeightedInnerProduct:
+
+    def _wip(self, x, y, a, b):
+        return np.dot(a, gs_apply_C_inv(x, y, b))
+
+    def test_bilinearity_first_arg(self):
+        n = 64
+        _, acf = _make_toeplitz_spd(n)
+        x, y = _gs_vectors(acf)
+        a1, a2, b = RNG.standard_normal((3, n))
+        alpha = 2.5
+        lhs = self._wip(x, y, alpha * a1 + a2, b)
+        rhs = alpha * self._wip(x, y, a1, b) + self._wip(x, y, a2, b)
+        np.testing.assert_allclose(lhs, rhs, rtol=1e-12)
+
+    def test_cauchy_schwarz(self):
+        # |<a,b>_C|^2 <= <a,a>_C * <b,b>_C
+        n = 64
+        _, acf = _make_toeplitz_spd(n)
+        x, y = _gs_vectors(acf)
+        a, b = RNG.standard_normal((2, n))
+        ab = self._wip(x, y, a, b)
+        aa = self._wip(x, y, a, a)
+        bb = self._wip(x, y, b, b)
+        assert ab**2 <= aa * bb + 1e-12  # small epsilon for floating point
+
+    def test_llr_formula_at_injection(self):
+        # LLR = <d|h>_C - 0.5*<h|h>_C.  With d=h (zero noise), LLR = 0.5*<h|h>_C > 0.
+        n = 256
+        _, acf = _make_toeplitz_spd(n)
+        x, y = _gs_vectors(acf)
+        h = RNG.standard_normal(n)
+        dh = self._wip(x, y, h, h)
+        hh = self._wip(x, y, h, h)
+        llr = dh - 0.5 * hh
+        np.testing.assert_allclose(llr, 0.5 * hh, rtol=1e-12)
+        assert llr > 0
+
+    def test_llr_formula_snr_relation(self):
+        # LLR ≈ 0.5 * SNR^2, SNR = <d|h>_C / sqrt(<h|h>_C)
+        n = 256
+        _, acf = _make_toeplitz_spd(n)
+        x, y = _gs_vectors(acf)
+        h = RNG.standard_normal(n)
+        noise = RNG.standard_normal(n) * 0.01  # tiny noise
+        d = h + noise
+        dh = self._wip(x, y, d, h)
+        hh = self._wip(x, y, h, h)
+        snr = dh / np.sqrt(hh)
+        llr = dh - 0.5 * hh
+        # LLR ≈ 0.5 * SNR^2 in the high-SNR limit
+        np.testing.assert_allclose(llr, 0.5 * snr**2, rtol=0.01)

@@ -450,3 +450,141 @@ class TestRelativeBinningLikelihood:
         )
         assert obj.frame == "H1"
         assert isinstance(obj, RelativeBinningLikelihood22)
+
+    def test_h1_frame_at_injection_positive(self, relbin_h1):
+        relbin_h1.parameters.update(INJECTION_PARAMS_H1)
+        ratio = relbin_h1.log_likelihood_ratio()
+        assert ratio > 0
+
+    def test_relbin_h1_close_to_exact_h1_at_injection(self, relbin_h1):
+        exact_h1 = ExactLikelihoodTimeDomain(
+            time=TIME, Detectors_list=DETECTORS,
+            injection_parameters=INJECTION_PARAMS_H1.copy(),
+            Data_list={}, x=X, y=Y, Noise=NOISE, frame="H1",
+        )
+        relbin_h1.parameters.update(INJECTION_PARAMS_H1)
+        exact_h1.parameters.update(INJECTION_PARAMS_H1)
+        np.testing.assert_allclose(
+            relbin_h1.log_likelihood_ratio(),
+            exact_h1.log_likelihood_ratio(),
+            rtol=0.01,
+        )
+
+    def test_geocent_time_shift_lowers_llr(self, relbin_geocent):
+        # Shifting geocent_time by 50 ms should reduce the LLR.
+        relbin_geocent.parameters.update(INJECTION_PARAMS_GEOCENT)
+        ratio_inj = relbin_geocent.log_likelihood_ratio()
+        shifted = INJECTION_PARAMS_GEOCENT.copy()
+        shifted["geocent_time"] += 0.05
+        relbin_geocent.parameters.update(shifted)
+        ratio_shifted = relbin_geocent.log_likelihood_ratio()
+        assert ratio_inj > ratio_shifted
+
+    def test_log_likelihood_is_ratio_plus_noise(self, relbin_geocent):
+        relbin_geocent.parameters.update(INJECTION_PARAMS_GEOCENT)
+        llr = relbin_geocent.log_likelihood_ratio()
+        noise_ll = relbin_geocent.noise_log_likelihood()
+        ll = relbin_geocent.log_likelihood()
+        np.testing.assert_allclose(ll, llr + noise_ll, rtol=1e-12)
+
+    def test_summary_data_A0_nonzero(self, relbin_geocent):
+        for k in DETECTORS:
+            A0, *_ = relbin_geocent.Summary_data_dict[k]
+            assert np.abs(A0).max() > 0
+
+    def test_summary_data_B0_symmetric(self, relbin_geocent):
+        # B0[i,j] = h22_i^T C^{-1} h22_j; since C is real-symmetric, B0 = B0^T (not Hermitian)
+        for k in DETECTORS:
+            _, _, B0, *_ = relbin_geocent.Summary_data_dict[k]
+            np.testing.assert_allclose(B0, B0.T, atol=1e-6)
+
+    def test_snr_consistent_with_llr(self, relbin_geocent):
+        # At injection with zero noise: LLR ≈ 0.5 * SNR^2
+        exact = ExactLikelihoodTimeDomain(
+            time=TIME, Detectors_list=DETECTORS,
+            injection_parameters=INJECTION_PARAMS_GEOCENT.copy(),
+            Data_list={}, x=X, y=Y, Noise=NOISE, frame="geocent",
+        )
+        exact.parameters.update(INJECTION_PARAMS_GEOCENT)
+        _, net_snr, *_ = exact.compute_SNR_TD_and_waveform_data()
+        llr = exact.log_likelihood_ratio()
+        np.testing.assert_allclose(llr, 0.5 * net_snr**2, rtol=0.05)
+
+
+# ---------------------------------------------------------------------------
+# Exact likelihood — additional coverage
+# ---------------------------------------------------------------------------
+
+class TestExactLikelihoodExtra:
+
+    @pytest.fixture(scope="class")
+    def exact_geocent(self):
+        return ExactLikelihoodTimeDomain(
+            time=TIME, Detectors_list=DETECTORS,
+            injection_parameters=INJECTION_PARAMS_GEOCENT.copy(),
+            Data_list={}, x=X, y=Y, Noise=NOISE, frame="geocent",
+        )
+
+    def test_log_likelihood_is_ratio_plus_noise(self, exact_geocent):
+        exact_geocent.parameters.update(INJECTION_PARAMS_GEOCENT)
+        llr = exact_geocent.log_likelihood_ratio()
+        noise_ll = exact_geocent.noise_log_likelihood()
+        ll = exact_geocent.log_likelihood()
+        np.testing.assert_allclose(ll, llr + noise_ll, rtol=1e-12)
+
+    def test_noise_log_likelihood_deterministic(self, exact_geocent):
+        v1 = exact_geocent.noise_log_likelihood()
+        v2 = exact_geocent.noise_log_likelihood()
+        assert v1 == v2  # cached, must be identical
+
+    def test_distance_scaling(self):
+        # Doubling luminosity_distance halves strain → SNR drops by 2
+        p_near = INJECTION_PARAMS_GEOCENT.copy()
+        p_far = INJECTION_PARAMS_GEOCENT.copy()
+        p_far["luminosity_distance"] *= 2.0
+
+        e_near = ExactLikelihoodTimeDomain(
+            time=TIME, Detectors_list=DETECTORS,
+            injection_parameters=p_near, Data_list={},
+            x=X, y=Y, Noise=NOISE, frame="geocent",
+        )
+        e_far = ExactLikelihoodTimeDomain(
+            time=TIME, Detectors_list=DETECTORS,
+            injection_parameters=p_far, Data_list={},
+            x=X, y=Y, Noise=NOISE, frame="geocent",
+        )
+        _, snr_near, *_ = e_near.compute_SNR_TD_and_waveform_data()
+        _, snr_far, *_ = e_far.compute_SNR_TD_and_waveform_data()
+        # SNR ∝ 1/d_L, so SNR_far = SNR_near / 2
+        np.testing.assert_allclose(snr_far, snr_near / 2.0, rtol=1e-3)
+
+    def test_chi1_nonzero_changes_llr(self):
+        p_spin = INJECTION_PARAMS_GEOCENT.copy()
+        p_spin["chi_1"] = 0.3
+
+        e_nospin = ExactLikelihoodTimeDomain(
+            time=TIME, Detectors_list=DETECTORS,
+            injection_parameters=INJECTION_PARAMS_GEOCENT.copy(),
+            Data_list={}, x=X, y=Y, Noise=NOISE, frame="geocent",
+        )
+        e_spin = ExactLikelihoodTimeDomain(
+            time=TIME, Detectors_list=DETECTORS,
+            injection_parameters=p_spin,
+            Data_list={}, x=X, y=Y, Noise=NOISE, frame="geocent",
+        )
+        e_nospin.parameters.update(INJECTION_PARAMS_GEOCENT)
+        e_spin.parameters.update(p_spin)
+        # Spinning and non-spinning injections evaluated at each other's params differ
+        assert e_nospin.log_likelihood_ratio() != e_spin.log_likelihood_ratio()
+
+    def test_data_with_nonzero_noise_still_has_positive_snr(self):
+        rng_local = np.random.default_rng(99)
+        noise_scale = np.sqrt(_NOISE_VAR)
+        noisy_noise = {k: rng_local.standard_normal(N) * noise_scale for k in DETECTORS}
+        e = ExactLikelihoodTimeDomain(
+            time=TIME, Detectors_list=DETECTORS,
+            injection_parameters=INJECTION_PARAMS_GEOCENT.copy(),
+            Data_list={}, x=X, y=Y, Noise=noisy_noise, frame="geocent",
+        )
+        _, net_snr, *_ = e.compute_SNR_TD_and_waveform_data()
+        assert net_snr > 0
