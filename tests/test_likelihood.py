@@ -588,3 +588,227 @@ class TestExactLikelihoodExtra:
         )
         _, net_snr, *_ = e.compute_SNR_TD_and_waveform_data()
         assert net_snr > 0
+
+
+# ---------------------------------------------------------------------------
+# H1-frame exact likelihood — primary frame used in the paper
+# ---------------------------------------------------------------------------
+
+class TestExactLikelihoodH1:
+    """ExactLikelihoodTimeDomain in H1-detector frame."""
+
+    @pytest.fixture(scope="class")
+    def exact_h1(self):
+        return ExactLikelihoodTimeDomain(
+            time=TIME,
+            Detectors_list=DETECTORS,
+            injection_parameters=INJECTION_PARAMS_H1.copy(),
+            Data_list={},
+            x=X,
+            y=Y,
+            Noise=NOISE,
+            frame="H1",
+        )
+
+    def test_constructs(self, exact_h1):
+        assert exact_h1 is not None
+        assert "H1" in exact_h1.data_times_C_inv
+        assert "L1" in exact_h1.data_times_C_inv
+
+    def test_snr_positive(self, exact_h1):
+        snrs, net_snr, *_ = exact_h1.compute_SNR_TD_and_waveform_data()
+        assert net_snr > 0
+        for snr in snrs.values():
+            assert snr > 0
+
+    def test_noise_log_likelihood_negative(self, exact_h1):
+        assert exact_h1.noise_log_likelihood() < 0
+
+    def test_noise_log_likelihood_deterministic(self, exact_h1):
+        v1 = exact_h1.noise_log_likelihood()
+        v2 = exact_h1.noise_log_likelihood()
+        assert v1 == v2
+
+    def test_log_likelihood_ratio_at_injection_positive(self, exact_h1):
+        exact_h1.parameters.update(INJECTION_PARAMS_H1)
+        ratio = exact_h1.log_likelihood_ratio()
+        assert ratio > 0
+
+    def test_log_likelihood_ratio_approx_half_snr_sq(self, exact_h1):
+        exact_h1.parameters.update(INJECTION_PARAMS_H1)
+        ratio = exact_h1.log_likelihood_ratio()
+        _, net_snr, *_ = exact_h1.compute_SNR_TD_and_waveform_data()
+        assert abs(ratio - 0.5 * net_snr**2) / (0.5 * net_snr**2) < 0.05
+
+    def test_log_likelihood_ratio_far_params_lower(self, exact_h1):
+        exact_h1.parameters.update(INJECTION_PARAMS_H1)
+        ratio_inj = exact_h1.log_likelihood_ratio()
+        far = INJECTION_PARAMS_H1.copy()
+        far["chirp_mass"] = 10.0
+        exact_h1.parameters.update(far)
+        ratio_far = exact_h1.log_likelihood_ratio()
+        assert ratio_inj > ratio_far
+
+    def test_log_likelihood_is_ratio_plus_noise(self, exact_h1):
+        exact_h1.parameters.update(INJECTION_PARAMS_H1)
+        llr = exact_h1.log_likelihood_ratio()
+        noise_ll = exact_h1.noise_log_likelihood()
+        ll = exact_h1.log_likelihood()
+        np.testing.assert_allclose(ll, llr + noise_ll, rtol=1e-12)
+
+    def test_h1_time_shift_lowers_llr(self, exact_h1):
+        exact_h1.parameters.update(INJECTION_PARAMS_H1)
+        ratio_inj = exact_h1.log_likelihood_ratio()
+        shifted = INJECTION_PARAMS_H1.copy()
+        shifted["H1_time"] += 0.05
+        exact_h1.parameters.update(shifted)
+        ratio_shifted = exact_h1.log_likelihood_ratio()
+        assert ratio_inj > ratio_shifted
+
+    def test_distance_scaling(self):
+        p_near = INJECTION_PARAMS_H1.copy()
+        p_far = INJECTION_PARAMS_H1.copy()
+        p_far["luminosity_distance"] *= 2.0
+        e_near = ExactLikelihoodTimeDomain(
+            time=TIME, Detectors_list=DETECTORS,
+            injection_parameters=p_near, Data_list={},
+            x=X, y=Y, Noise=NOISE, frame="H1",
+        )
+        e_far = ExactLikelihoodTimeDomain(
+            time=TIME, Detectors_list=DETECTORS,
+            injection_parameters=p_far, Data_list={},
+            x=X, y=Y, Noise=NOISE, frame="H1",
+        )
+        _, snr_near, *_ = e_near.compute_SNR_TD_and_waveform_data()
+        _, snr_far, *_ = e_far.compute_SNR_TD_and_waveform_data()
+        np.testing.assert_allclose(snr_far, snr_near / 2.0, rtol=1e-3)
+
+    def test_data_with_nonzero_noise_still_has_positive_snr(self):
+        rng_local = np.random.default_rng(77)
+        noise_scale = np.sqrt(_NOISE_VAR)
+        noisy_noise = {k: rng_local.standard_normal(N) * noise_scale for k in DETECTORS}
+        e = ExactLikelihoodTimeDomain(
+            time=TIME, Detectors_list=DETECTORS,
+            injection_parameters=INJECTION_PARAMS_H1.copy(),
+            Data_list={}, x=X, y=Y, Noise=noisy_noise, frame="H1",
+        )
+        _, net_snr, *_ = e.compute_SNR_TD_and_waveform_data()
+        assert net_snr > 0
+
+
+# ---------------------------------------------------------------------------
+# H1-frame relative binning — primary configuration used in the paper
+# ---------------------------------------------------------------------------
+
+class TestRelativeBinningH1:
+    """RelativeBinningLikelihood22 in H1-detector frame."""
+
+    @pytest.fixture(scope="class")
+    def relbin_h1(self):
+        return RelativeBinningLikelihood22(
+            time=TIME,
+            Detectors_list=DETECTORS,
+            fiducial_parameters=INJECTION_PARAMS_H1.copy(),
+            injection_parameters=INJECTION_PARAMS_H1.copy(),
+            Data_list={},
+            x=X,
+            y=Y,
+            Noise=NOISE,
+            frame="H1",
+        )
+
+    @pytest.fixture(scope="class")
+    def exact_h1(self):
+        return ExactLikelihoodTimeDomain(
+            time=TIME,
+            Detectors_list=DETECTORS,
+            injection_parameters=INJECTION_PARAMS_H1.copy(),
+            Data_list={},
+            x=X,
+            y=Y,
+            Noise=NOISE,
+            frame="H1",
+        )
+
+    def test_constructs(self, relbin_h1):
+        assert relbin_h1 is not None
+        assert hasattr(relbin_h1, "Summary_data_dict")
+
+    def test_summary_data_shapes(self, relbin_h1):
+        for k in DETECTORS:
+            A_0, A_1, B_0, B_1, B_2, B_3 = relbin_h1.Summary_data_dict[k]
+            n = relbin_h1.number_of_bins[k]
+            assert A_0.shape == (n,)
+            assert A_1.shape == (n,)
+            assert B_0.shape == (n, n)
+            assert B_1.shape == (n, n)
+            assert B_2.shape == (n, n)
+            assert B_3.shape == (n, n)
+
+    def test_summary_data_A0_nonzero(self, relbin_h1):
+        for k in DETECTORS:
+            A0, *_ = relbin_h1.Summary_data_dict[k]
+            assert np.abs(A0).max() > 0
+
+    def test_summary_data_B0_symmetric(self, relbin_h1):
+        for k in DETECTORS:
+            _, _, B0, *_ = relbin_h1.Summary_data_dict[k]
+            np.testing.assert_allclose(B0, B0.T, atol=1e-6)
+
+    def test_log_likelihood_ratio_at_injection_positive(self, relbin_h1):
+        relbin_h1.parameters.update(INJECTION_PARAMS_H1)
+        ratio = relbin_h1.log_likelihood_ratio()
+        assert ratio > 0
+
+    def test_relbin_close_to_exact_at_injection(self, relbin_h1, exact_h1):
+        relbin_h1.parameters.update(INJECTION_PARAMS_H1)
+        exact_h1.parameters.update(INJECTION_PARAMS_H1)
+        ratio_rb = relbin_h1.log_likelihood_ratio()
+        ratio_ex = exact_h1.log_likelihood_ratio()
+        np.testing.assert_allclose(ratio_rb, ratio_ex, rtol=0.01)
+
+    def test_log_likelihood_ratio_far_params_lower(self, relbin_h1):
+        relbin_h1.parameters.update(INJECTION_PARAMS_H1)
+        ratio_inj = relbin_h1.log_likelihood_ratio()
+        far = INJECTION_PARAMS_H1.copy()
+        far["chirp_mass"] = INJECTION_PARAMS_H1["chirp_mass"] * 1.05
+        relbin_h1.parameters.update(far)
+        ratio_far = relbin_h1.log_likelihood_ratio()
+        assert ratio_inj > ratio_far
+
+    def test_h1_time_shift_lowers_llr(self, relbin_h1):
+        relbin_h1.parameters.update(INJECTION_PARAMS_H1)
+        ratio_inj = relbin_h1.log_likelihood_ratio()
+        shifted = INJECTION_PARAMS_H1.copy()
+        shifted["H1_time"] += 0.05
+        relbin_h1.parameters.update(shifted)
+        ratio_shifted = relbin_h1.log_likelihood_ratio()
+        assert ratio_inj > ratio_shifted
+
+    def test_log_likelihood_is_ratio_plus_noise(self, relbin_h1):
+        relbin_h1.parameters.update(INJECTION_PARAMS_H1)
+        llr = relbin_h1.log_likelihood_ratio()
+        noise_ll = relbin_h1.noise_log_likelihood()
+        ll = relbin_h1.log_likelihood()
+        np.testing.assert_allclose(ll, llr + noise_ll, rtol=1e-12)
+
+    def test_snr_consistent_with_llr(self, relbin_h1, exact_h1):
+        # At injection with zero noise: LLR ≈ 0.5 * SNR^2
+        exact_h1.parameters.update(INJECTION_PARAMS_H1)
+        _, net_snr, *_ = exact_h1.compute_SNR_TD_and_waveform_data()
+        relbin_h1.parameters.update(INJECTION_PARAMS_H1)
+        llr = relbin_h1.log_likelihood_ratio()
+        np.testing.assert_allclose(llr, 0.5 * net_snr**2, rtol=0.05)
+
+    def test_bin_edges_monotone(self, relbin_h1):
+        for k in DETECTORS:
+            edges = relbin_h1.bin_edge_index[k]
+            assert np.all(np.diff(edges) > 0)
+
+    def test_bin_edges_cover_full_array(self, relbin_h1):
+        for k in DETECTORS:
+            assert relbin_h1.bin_edge_index[k][-1] == N - 1
+
+    def test_bin_width_positive(self, relbin_h1):
+        for k in DETECTORS:
+            assert np.all(relbin_h1.bin_width[k] > 0)
