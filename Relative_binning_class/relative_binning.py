@@ -61,7 +61,7 @@ class RelativeBinningLikelihood22(TimeDomainLikelihoodBase):
         },
         spacing=np.array([1, 10, 100]),
         spacing_times=np.array([0.1, 0.2]),
-        time_split_per_detector={"H1": -0.1, "L1": -0.1, "V1": -0.1},
+        time_split_per_detector={"H1": -0.02, "L1": -0.02, "V1": -0.1},
         priors=None,
         frame="geocent",
     ):
