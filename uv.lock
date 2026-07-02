@@ -863,6 +863,9 @@ version = "0.1.0"
 source = { virtual = "." }
 
 [package.dev-dependencies]
+dev = [
+    { name = "pytest" },
+]
 test = [
     { name = "numpy", version = "2.2.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
     { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version == '3.11.*'" },
@@ -888,6 +891,7 @@ test-integration = [
 [package.metadata]
 
 [package.metadata.requires-dev]
+dev = [{ name = "pytest", specifier = ">=9.1.1" }]
 test = [
     { name = "numpy", specifier = ">=1.26" },
     { name = "pytest", specifier = ">=8.0" },

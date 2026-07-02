@@ -7,10 +7,15 @@ A single class parameterised by `frame`:
   frame='geocent'  → time delays from geocentre, samples geocent_time
   frame='H1'       → time delays relative to H1 detector, samples H1_time
 """
+import os
+import sys
 import numpy as np
 import lalsimulation as ls
 import lal
 from bilby.gw.conversion import chirp_mass_and_mass_ratio_to_component_masses
+
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'ACF_noise_and_covariance_matrix_data'))
+from covariance_solver import ToeplitzSolver
 
 from base import TimeDomainLikelihoodBase
 
@@ -53,6 +58,7 @@ class ExactLikelihoodTimeDomain(TimeDomainLikelihoodBase):
         fref=10,
         modes_to_activate=[(2, 2)],
         frame="geocent",
+        solver=None,
     ):
         super().__init__()
         if frame not in ("geocent", "H1"):
@@ -71,6 +77,10 @@ class ExactLikelihoodTimeDomain(TimeDomainLikelihoodBase):
         self.noise_log_likelihood_value = None
         self.fmin = fmin
         self.fref = fref
+        if solver is not None:
+            self.solver = solver
+        else:
+            self.solver = {k: ToeplitzSolver(x[k], y[k]) for k in (Detectors_list or {})}
 
         self.create_lalparams_with_modes()
         self.compute_SNR_TD_and_waveform_data()
@@ -141,9 +151,7 @@ class ExactLikelihoodTimeDomain(TimeDomainLikelihoodBase):
                     + self.Noise[k]
                 )
 
-            data_times_C_inv[k] = self.Inner_product_C_inv_vector(
-                self.x[k], self.y[k], self.Data_list[k]
-            )
+            data_times_C_inv[k] = self.solver[k].apply_C_inv(self.Data_list[k])
             data_times_C_inv_times_data[k] = np.dot(
                 data_times_C_inv[k], self.Data_list[k]
             )
@@ -161,10 +169,8 @@ class ExactLikelihoodTimeDomain(TimeDomainLikelihoodBase):
             signal = F_plus * np.real(self.h_injection[k]) + F_cross * (
                 -np.imag(self.h_injection[k])
             )
-            hh = self.weighted_inner_product(self.x[k], self.y[k], signal, signal)
-            dh = self.weighted_inner_product(
-                self.x[k], self.y[k], self.Data_list[k], signal
-            )
+            hh = np.dot(signal, self.solver[k].apply_C_inv(signal))
+            dh = np.dot(self.Data_list[k], self.solver[k].apply_C_inv(signal))
             SNR = np.abs(dh) / np.sqrt(np.abs(hh))
             SNR_arr.append(SNR)
             SNR_dict[k] = SNR
@@ -198,8 +204,8 @@ class ExactLikelihoodTimeDomain(TimeDomainLikelihoodBase):
             )
             F_plus, F_cross = self._antenna_pattern(parameters, det)
             signal = F_plus * np.real(h) + F_cross * (-np.imag(h))
-            log_like += np.dot(self.data_times_C_inv[k], signal) - 0.5 * (
-                self.weighted_inner_product(self.x[k], self.y[k], signal, signal)
+            log_like += np.dot(self.data_times_C_inv[k], signal) - 0.5 * np.dot(
+                signal, self.solver[k].apply_C_inv(signal)
             )
         return log_like
 

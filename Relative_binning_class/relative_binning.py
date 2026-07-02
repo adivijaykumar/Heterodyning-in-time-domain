@@ -7,11 +7,16 @@ A single class parameterised by `frame`:
   frame='geocent'  → time delays from geocentre, samples geocent_time
   frame='H1'       → time delays relative to H1 detector, samples H1_time
 """
+import os
+import sys
 import numpy as np
 import lalsimulation as ls
 import lal
 from bilby.gw.conversion import chirp_mass_and_mass_ratio_to_component_masses
 from scipy.optimize import differential_evolution
+
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'ACF_noise_and_covariance_matrix_data'))
+from covariance_solver import ToeplitzSolver
 
 from base import TimeDomainLikelihoodBase
 from exact import ExactLikelihoodTimeDomain
@@ -64,6 +69,7 @@ class RelativeBinningLikelihood22(TimeDomainLikelihoodBase):
         time_split_per_detector={"H1": -0.02, "L1": -0.02, "V1": -0.1},
         priors=None,
         frame="geocent",
+        solver=None,
     ):
         super().__init__()
         if frame not in ("geocent", "H1"):
@@ -90,6 +96,10 @@ class RelativeBinningLikelihood22(TimeDomainLikelihoodBase):
         self.fmin = fmin
         self.fref = fref
         self._Data_list = Data_list if Data_list else {}
+        if solver is not None:
+            self.solver = solver
+        else:
+            self.solver = {k: ToeplitzSolver(x[k], y[k]) for k in (Detectors_list or {})}
 
         self.compute_SNR_TD_and_waveform_data()
         self.setup_bins_per_detector()
@@ -214,9 +224,7 @@ class RelativeBinningLikelihood22(TimeDomainLikelihoodBase):
                     + self.Noise[k]
                 )
 
-            data_times_C_inv[k] = self.Inner_product_C_inv_vector(
-                self.x[k], self.y[k], self.Data_list[k]
-            )
+            data_times_C_inv[k] = self.solver[k].apply_C_inv(self.Data_list[k])
             data_times_C_inv_times_data[k] = np.dot(data_times_C_inv[k], self.Data_list[k])
 
         self.Time_array_per_detector = Time_array_per_detector
@@ -231,8 +239,8 @@ class RelativeBinningLikelihood22(TimeDomainLikelihoodBase):
         for k, det in self.Detectors_list.items():
             F_plus, F_cross = antenna_patterns[k]
             signal = F_plus * np.real(h_injection[k]) + F_cross * (-np.imag(h_injection[k]))
-            hh = self.weighted_inner_product(self.x[k], self.y[k], signal, signal)
-            dh = self.weighted_inner_product(self.x[k], self.y[k], self.Data_list[k], signal)
+            hh = np.dot(signal, self.solver[k].apply_C_inv(signal))
+            dh = np.dot(self.Data_list[k], self.solver[k].apply_C_inv(signal))
             SNR = np.abs(dh) / np.sqrt(np.abs(hh))
             SNR_arr.append(SNR)
             SNR_dict[k] = SNR
@@ -419,12 +427,8 @@ class RelativeBinningLikelihood22(TimeDomainLikelihoodBase):
             B_2 = np.zeros((self.number_of_bins[k], self.number_of_bins[k]), dtype=complex)
             B_3 = np.zeros((self.number_of_bins[k], self.number_of_bins[k]), dtype=complex)
 
-            h22_times_C_inv_full = self.Inner_product_C_inv_vector(
-                self.x[k], self.y[k], H22_matrix
-            )
-            h22_conj_times_C_inv_full = self.Inner_product_C_inv_vector(
-                self.x[k], self.y[k], H22_conj_matrix
-            )
+            h22_times_C_inv_full = self.solver[k].apply_C_inv(H22_matrix)
+            h22_conj_times_C_inv_full = self.solver[k].apply_C_inv(H22_conj_matrix)
 
             for i in range(self.number_of_bins[k]):
                 h22_ci = h22_times_C_inv_full[:, i]

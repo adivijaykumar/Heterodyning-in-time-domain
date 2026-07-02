@@ -4,6 +4,9 @@ version = "0.1.0"
 requires-python = ">=3.10"
 
 [dependency-groups]
+dev = [
+    "pytest>=9.1.1",
+]
 # Pure-math unit tests — no LAL required.
 # Run with: uv run --group test pytest tests/test_math.py -v
 test = [
