@@ -65,7 +65,7 @@ class RelativeBinningLikelihood22(TimeDomainLikelihoodBase):
         priors=None,
         frame="geocent",
     ):
-        super().__init__()
+        super().__init__(parameters={})
         if frame not in ("geocent", "H1"):
             raise ValueError(f"frame must be 'geocent' or 'H1', got {frame!r}")
         self.frame = frame
@@ -475,9 +475,7 @@ class RelativeBinningLikelihood22(TimeDomainLikelihoodBase):
     # Likelihood
     # ------------------------------------------------------------------
 
-    def log_likelihood_ratio(self, **parameters):
-        if parameters:
-            self._parameters.update(parameters)
+    def log_likelihood_ratio(self):
         log_like = 0
         Y_22 = self.SphericalHarmonics22(
             self.parameters["theta_jn"], np.pi / 2 - self.parameters["phase"], 2
