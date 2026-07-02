@@ -54,7 +54,7 @@ class ExactLikelihoodTimeDomain(TimeDomainLikelihoodBase):
         modes_to_activate=[(2, 2)],
         frame="geocent",
     ):
-        super().__init__(parameters={})
+        super().__init__()
         if frame not in ("geocent", "H1"):
             raise ValueError(f"frame must be 'geocent' or 'H1', got {frame!r}")
         self.frame = frame
@@ -182,8 +182,10 @@ class ExactLikelihoodTimeDomain(TimeDomainLikelihoodBase):
     # Likelihood
     # ------------------------------------------------------------------
 
-    def log_likelihood_ratio(self):
+    def log_likelihood_ratio(self, **parameters):
         """Exact log-likelihood ratio ln L(d|θ) - ln L(d|noise)."""
+        if parameters:
+            self._parameters.update(parameters)
         log_like = 0.0
         for k, det in self.Detectors_list.items():
             t_delay = self._time_delay(self.parameters, det)

@@ -92,9 +92,9 @@ class TestGSMath:
     def _make_base(self):
         # Minimal concrete subclass
         class Concrete(TimeDomainLikelihoodBase):
-            def log_likelihood_ratio(self):
+            def log_likelihood_ratio(self, **parameters):
                 return 0.0
-        obj = Concrete(parameters={})
+        obj = Concrete()
         obj._time_key = "geocent_time"
         obj.Detectors_list = DETECTORS
         return obj

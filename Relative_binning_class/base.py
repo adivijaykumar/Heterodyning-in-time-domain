@@ -25,6 +25,25 @@ class TimeDomainLikelihoodBase(bilby.Likelihood):
     Subclasses must set self._time_key and implement _time_delay().
     """
 
+    def __init__(self):
+        # Call bilby parent without parameters= to avoid FutureWarning.
+        # We manage self._parameters ourselves via the property below.
+        super().__init__()
+        self._parameters = {}
+
+    # Override bilby's deprecated parameters property to silence FutureWarnings
+    # while keeping full compatibility with the bilby sampler interface.
+    @property
+    def parameters(self):
+        return self._parameters
+
+    @parameters.setter
+    def parameters(self, parameters):
+        self._parameters = dict(parameters) if parameters is not None else {}
+
+    def log_likelihood_ratio(self, **parameters):
+        raise NotImplementedError
+
     # ------------------------------------------------------------------
     # Gohberg-Semencul C^{-1} v
     # ------------------------------------------------------------------
@@ -124,5 +143,5 @@ class TimeDomainLikelihoodBase(bilby.Likelihood):
             )
         return self.noise_log_likelihood_value
 
-    def log_likelihood(self):
-        return self.log_likelihood_ratio() + self.noise_log_likelihood()
+    def log_likelihood(self, **parameters):
+        return self.log_likelihood_ratio(**parameters) + self.noise_log_likelihood()
