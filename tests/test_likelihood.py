@@ -94,7 +94,7 @@ class TestGSMath:
         class Concrete(TimeDomainLikelihoodBase):
             def log_likelihood_ratio(self, **parameters):
                 return 0.0
-        obj = Concrete(parameters={})
+        obj = Concrete()
         obj._time_key = "geocent_time"
         obj.Detectors_list = DETECTORS
         return obj
@@ -242,7 +242,8 @@ class TestExactLikelihood:
     """ExactLikelihoodTimeDomain end-to-end."""
 
     @pytest.fixture(scope="class")
-    def exact_geocent(self):
+    @classmethod
+    def exact_geocent(cls):
         return ExactLikelihoodTimeDomain(
             time=TIME,
             Detectors_list=DETECTORS,
@@ -255,7 +256,8 @@ class TestExactLikelihood:
         )
 
     @pytest.fixture(scope="class")
-    def exact_h1(self):
+    @classmethod
+    def exact_h1(cls):
         return ExactLikelihoodTimeDomain(
             time=TIME,
             Detectors_list=DETECTORS,
@@ -340,7 +342,8 @@ class TestRelativeBinningLikelihood:
     """RelativeBinningLikelihood22 end-to-end."""
 
     @pytest.fixture(scope="class")
-    def relbin_geocent(self):
+    @classmethod
+    def relbin_geocent(cls):
         return RelativeBinningLikelihood22(
             time=TIME,
             Detectors_list=DETECTORS,
@@ -354,7 +357,8 @@ class TestRelativeBinningLikelihood:
         )
 
     @pytest.fixture(scope="class")
-    def relbin_h1(self):
+    @classmethod
+    def relbin_h1(cls):
         return RelativeBinningLikelihood22(
             time=TIME,
             Detectors_list=DETECTORS,
@@ -500,7 +504,8 @@ class TestRelativeBinningLikelihood:
 class TestExactLikelihoodExtra:
 
     @pytest.fixture(scope="class")
-    def exact_geocent(self):
+    @classmethod
+    def exact_geocent(cls):
         return ExactLikelihoodTimeDomain(
             time=TIME, Detectors_list=DETECTORS,
             injection_parameters=INJECTION_PARAMS_GEOCENT.copy(),
@@ -577,7 +582,8 @@ class TestExactLikelihoodH1:
     """ExactLikelihoodTimeDomain in H1-detector frame."""
 
     @pytest.fixture(scope="class")
-    def exact_h1(self):
+    @classmethod
+    def exact_h1(cls):
         return ExactLikelihoodTimeDomain(
             time=TIME,
             Detectors_list=DETECTORS,
@@ -676,7 +682,8 @@ class TestRelativeBinningH1:
     """RelativeBinningLikelihood22 in H1-detector frame."""
 
     @pytest.fixture(scope="class")
-    def relbin_h1(self):
+    @classmethod
+    def relbin_h1(cls):
         return RelativeBinningLikelihood22(
             time=TIME,
             Detectors_list=DETECTORS,
@@ -690,7 +697,8 @@ class TestRelativeBinningH1:
         )
 
     @pytest.fixture(scope="class")
-    def exact_h1(self):
+    @classmethod
+    def exact_h1(cls):
         return ExactLikelihoodTimeDomain(
             time=TIME,
             Detectors_list=DETECTORS,
