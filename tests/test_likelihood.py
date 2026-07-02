@@ -92,7 +92,7 @@ class TestGSMath:
     def _make_base(self):
         # Minimal concrete subclass
         class Concrete(TimeDomainLikelihoodBase):
-            def log_likelihood_ratio(self):
+            def log_likelihood_ratio(self, **parameters):
                 return 0.0
         obj = Concrete(parameters={})
         obj._time_key = "geocent_time"
@@ -292,26 +292,22 @@ class TestExactLikelihood:
 
     def test_log_likelihood_ratio_at_injection_positive(self, exact_geocent):
         # At injection, signal matches data → ratio should be positive
-        exact_geocent.parameters.update(INJECTION_PARAMS_GEOCENT)
-        ratio = exact_geocent.log_likelihood_ratio()
+        ratio = exact_geocent.log_likelihood_ratio(**INJECTION_PARAMS_GEOCENT)
         assert ratio > 0
 
     def test_log_likelihood_ratio_zero_noise_approx_half_snr_sq(self, exact_geocent):
         # Zero-noise: ln L(θ_inj) ≈ SNR²/2
-        exact_geocent.parameters.update(INJECTION_PARAMS_GEOCENT)
-        ratio = exact_geocent.log_likelihood_ratio()
+        ratio = exact_geocent.log_likelihood_ratio(**INJECTION_PARAMS_GEOCENT)
         _, net_snr, *_ = exact_geocent.compute_SNR_TD_and_waveform_data()
         # Allow generous tolerance — time-domain discretisation causes small deviations
         assert abs(ratio - 0.5 * net_snr ** 2) / (0.5 * net_snr ** 2) < 0.05
 
     def test_log_likelihood_ratio_far_params_lower(self, exact_geocent):
         # A very different chirp mass should give a lower likelihood
-        exact_geocent.parameters.update(INJECTION_PARAMS_GEOCENT)
-        ratio_inj = exact_geocent.log_likelihood_ratio()
+        ratio_inj = exact_geocent.log_likelihood_ratio(**INJECTION_PARAMS_GEOCENT)
         far_params = INJECTION_PARAMS_GEOCENT.copy()
         far_params["chirp_mass"] = 10.0
-        exact_geocent.parameters.update(far_params)
-        ratio_far = exact_geocent.log_likelihood_ratio()
+        ratio_far = exact_geocent.log_likelihood_ratio(**far_params)
         assert ratio_inj > ratio_far
 
     def test_geocent_and_h1_frames_give_same_snr(self, exact_geocent, exact_h1):
@@ -387,8 +383,7 @@ class TestRelativeBinningLikelihood:
             assert B_3.shape == (n, n)
 
     def test_log_likelihood_ratio_at_injection_positive(self, relbin_geocent):
-        relbin_geocent.parameters.update(INJECTION_PARAMS_GEOCENT)
-        ratio = relbin_geocent.log_likelihood_ratio()
+        ratio = relbin_geocent.log_likelihood_ratio(**INJECTION_PARAMS_GEOCENT)
         assert ratio > 0
 
     def test_relbin_close_to_exact_at_injection(self, relbin_geocent):
@@ -403,29 +398,23 @@ class TestRelativeBinningLikelihood:
             Noise=NOISE,
             frame="geocent",
         )
-        relbin_geocent.parameters.update(INJECTION_PARAMS_GEOCENT)
-        exact.parameters.update(INJECTION_PARAMS_GEOCENT)
-        ratio_rb = relbin_geocent.log_likelihood_ratio()
-        ratio_ex = exact.log_likelihood_ratio()
+        ratio_rb = relbin_geocent.log_likelihood_ratio(**INJECTION_PARAMS_GEOCENT)
+        ratio_ex = exact.log_likelihood_ratio(**INJECTION_PARAMS_GEOCENT)
         # Relative binning is approximate; allow 1% error at injection
         np.testing.assert_allclose(ratio_rb, ratio_ex, rtol=0.01)
 
     def test_log_likelihood_ratio_far_params_lower(self, relbin_geocent):
         # Use parameters close but not equal to fiducial: relative binning
         # approximation breaks down when parameters differ by >~10% from fiducial.
-        relbin_geocent.parameters.update(INJECTION_PARAMS_GEOCENT)
-        ratio_inj = relbin_geocent.log_likelihood_ratio()
+        ratio_inj = relbin_geocent.log_likelihood_ratio(**INJECTION_PARAMS_GEOCENT)
         far = INJECTION_PARAMS_GEOCENT.copy()
         far["chirp_mass"] = INJECTION_PARAMS_GEOCENT["chirp_mass"] * 1.05  # 5% off
-        relbin_geocent.parameters.update(far)
-        ratio_far = relbin_geocent.log_likelihood_ratio()
+        ratio_far = relbin_geocent.log_likelihood_ratio(**far)
         assert ratio_inj > ratio_far
 
     def test_geocent_and_h1_give_consistent_ratio(self, relbin_geocent, relbin_h1):
-        relbin_geocent.parameters.update(INJECTION_PARAMS_GEOCENT)
-        relbin_h1.parameters.update(INJECTION_PARAMS_H1)
-        ratio_geocent = relbin_geocent.log_likelihood_ratio()
-        ratio_h1 = relbin_h1.log_likelihood_ratio()
+        ratio_geocent = relbin_geocent.log_likelihood_ratio(**INJECTION_PARAMS_GEOCENT)
+        ratio_h1 = relbin_h1.log_likelihood_ratio(**INJECTION_PARAMS_H1)
         # Same physical signal → same likelihood ratio
         np.testing.assert_allclose(ratio_geocent, ratio_h1, rtol=1e-3)
 
@@ -452,8 +441,7 @@ class TestRelativeBinningLikelihood:
         assert isinstance(obj, RelativeBinningLikelihood22)
 
     def test_h1_frame_at_injection_positive(self, relbin_h1):
-        relbin_h1.parameters.update(INJECTION_PARAMS_H1)
-        ratio = relbin_h1.log_likelihood_ratio()
+        ratio = relbin_h1.log_likelihood_ratio(**INJECTION_PARAMS_H1)
         assert ratio > 0
 
     def test_relbin_h1_close_to_exact_h1_at_injection(self, relbin_h1):
@@ -462,29 +450,24 @@ class TestRelativeBinningLikelihood:
             injection_parameters=INJECTION_PARAMS_H1.copy(),
             Data_list={}, x=X, y=Y, Noise=NOISE, frame="H1",
         )
-        relbin_h1.parameters.update(INJECTION_PARAMS_H1)
-        exact_h1.parameters.update(INJECTION_PARAMS_H1)
         np.testing.assert_allclose(
-            relbin_h1.log_likelihood_ratio(),
-            exact_h1.log_likelihood_ratio(),
+            relbin_h1.log_likelihood_ratio(**INJECTION_PARAMS_H1),
+            exact_h1.log_likelihood_ratio(**INJECTION_PARAMS_H1),
             rtol=0.01,
         )
 
     def test_geocent_time_shift_lowers_llr(self, relbin_geocent):
         # Shifting geocent_time by 50 ms should reduce the LLR.
-        relbin_geocent.parameters.update(INJECTION_PARAMS_GEOCENT)
-        ratio_inj = relbin_geocent.log_likelihood_ratio()
+        ratio_inj = relbin_geocent.log_likelihood_ratio(**INJECTION_PARAMS_GEOCENT)
         shifted = INJECTION_PARAMS_GEOCENT.copy()
         shifted["geocent_time"] += 0.05
-        relbin_geocent.parameters.update(shifted)
-        ratio_shifted = relbin_geocent.log_likelihood_ratio()
+        ratio_shifted = relbin_geocent.log_likelihood_ratio(**shifted)
         assert ratio_inj > ratio_shifted
 
     def test_log_likelihood_is_ratio_plus_noise(self, relbin_geocent):
-        relbin_geocent.parameters.update(INJECTION_PARAMS_GEOCENT)
-        llr = relbin_geocent.log_likelihood_ratio()
+        llr = relbin_geocent.log_likelihood_ratio(**INJECTION_PARAMS_GEOCENT)
         noise_ll = relbin_geocent.noise_log_likelihood()
-        ll = relbin_geocent.log_likelihood()
+        ll = relbin_geocent.log_likelihood(**INJECTION_PARAMS_GEOCENT)
         np.testing.assert_allclose(ll, llr + noise_ll, rtol=1e-12)
 
     def test_summary_data_A0_nonzero(self, relbin_geocent):
@@ -505,9 +488,8 @@ class TestRelativeBinningLikelihood:
             injection_parameters=INJECTION_PARAMS_GEOCENT.copy(),
             Data_list={}, x=X, y=Y, Noise=NOISE, frame="geocent",
         )
-        exact.parameters.update(INJECTION_PARAMS_GEOCENT)
         _, net_snr, *_ = exact.compute_SNR_TD_and_waveform_data()
-        llr = exact.log_likelihood_ratio()
+        llr = exact.log_likelihood_ratio(**INJECTION_PARAMS_GEOCENT)
         np.testing.assert_allclose(llr, 0.5 * net_snr**2, rtol=0.05)
 
 
@@ -526,10 +508,9 @@ class TestExactLikelihoodExtra:
         )
 
     def test_log_likelihood_is_ratio_plus_noise(self, exact_geocent):
-        exact_geocent.parameters.update(INJECTION_PARAMS_GEOCENT)
-        llr = exact_geocent.log_likelihood_ratio()
+        llr = exact_geocent.log_likelihood_ratio(**INJECTION_PARAMS_GEOCENT)
         noise_ll = exact_geocent.noise_log_likelihood()
-        ll = exact_geocent.log_likelihood()
+        ll = exact_geocent.log_likelihood(**INJECTION_PARAMS_GEOCENT)
         np.testing.assert_allclose(ll, llr + noise_ll, rtol=1e-12)
 
     def test_noise_log_likelihood_deterministic(self, exact_geocent):
@@ -572,10 +553,8 @@ class TestExactLikelihoodExtra:
             injection_parameters=p_spin,
             Data_list={}, x=X, y=Y, Noise=NOISE, frame="geocent",
         )
-        e_nospin.parameters.update(INJECTION_PARAMS_GEOCENT)
-        e_spin.parameters.update(p_spin)
         # Spinning and non-spinning injections evaluated at each other's params differ
-        assert e_nospin.log_likelihood_ratio() != e_spin.log_likelihood_ratio()
+        assert e_nospin.log_likelihood_ratio(**INJECTION_PARAMS_GEOCENT) != e_spin.log_likelihood_ratio(**p_spin)
 
     def test_data_with_nonzero_noise_still_has_positive_snr(self):
         rng_local = np.random.default_rng(99)
@@ -630,39 +609,32 @@ class TestExactLikelihoodH1:
         assert v1 == v2
 
     def test_log_likelihood_ratio_at_injection_positive(self, exact_h1):
-        exact_h1.parameters.update(INJECTION_PARAMS_H1)
-        ratio = exact_h1.log_likelihood_ratio()
+        ratio = exact_h1.log_likelihood_ratio(**INJECTION_PARAMS_H1)
         assert ratio > 0
 
     def test_log_likelihood_ratio_approx_half_snr_sq(self, exact_h1):
-        exact_h1.parameters.update(INJECTION_PARAMS_H1)
-        ratio = exact_h1.log_likelihood_ratio()
+        ratio = exact_h1.log_likelihood_ratio(**INJECTION_PARAMS_H1)
         _, net_snr, *_ = exact_h1.compute_SNR_TD_and_waveform_data()
         assert abs(ratio - 0.5 * net_snr**2) / (0.5 * net_snr**2) < 0.05
 
     def test_log_likelihood_ratio_far_params_lower(self, exact_h1):
-        exact_h1.parameters.update(INJECTION_PARAMS_H1)
-        ratio_inj = exact_h1.log_likelihood_ratio()
+        ratio_inj = exact_h1.log_likelihood_ratio(**INJECTION_PARAMS_H1)
         far = INJECTION_PARAMS_H1.copy()
         far["chirp_mass"] = 10.0
-        exact_h1.parameters.update(far)
-        ratio_far = exact_h1.log_likelihood_ratio()
+        ratio_far = exact_h1.log_likelihood_ratio(**far)
         assert ratio_inj > ratio_far
 
     def test_log_likelihood_is_ratio_plus_noise(self, exact_h1):
-        exact_h1.parameters.update(INJECTION_PARAMS_H1)
-        llr = exact_h1.log_likelihood_ratio()
+        llr = exact_h1.log_likelihood_ratio(**INJECTION_PARAMS_H1)
         noise_ll = exact_h1.noise_log_likelihood()
-        ll = exact_h1.log_likelihood()
+        ll = exact_h1.log_likelihood(**INJECTION_PARAMS_H1)
         np.testing.assert_allclose(ll, llr + noise_ll, rtol=1e-12)
 
     def test_h1_time_shift_lowers_llr(self, exact_h1):
-        exact_h1.parameters.update(INJECTION_PARAMS_H1)
-        ratio_inj = exact_h1.log_likelihood_ratio()
+        ratio_inj = exact_h1.log_likelihood_ratio(**INJECTION_PARAMS_H1)
         shifted = INJECTION_PARAMS_H1.copy()
         shifted["H1_time"] += 0.05
-        exact_h1.parameters.update(shifted)
-        ratio_shifted = exact_h1.log_likelihood_ratio()
+        ratio_shifted = exact_h1.log_likelihood_ratio(**shifted)
         assert ratio_inj > ratio_shifted
 
     def test_distance_scaling(self):
@@ -756,48 +728,38 @@ class TestRelativeBinningH1:
             np.testing.assert_allclose(B0, B0.T, atol=1e-6)
 
     def test_log_likelihood_ratio_at_injection_positive(self, relbin_h1):
-        relbin_h1.parameters.update(INJECTION_PARAMS_H1)
-        ratio = relbin_h1.log_likelihood_ratio()
+        ratio = relbin_h1.log_likelihood_ratio(**INJECTION_PARAMS_H1)
         assert ratio > 0
 
     def test_relbin_close_to_exact_at_injection(self, relbin_h1, exact_h1):
-        relbin_h1.parameters.update(INJECTION_PARAMS_H1)
-        exact_h1.parameters.update(INJECTION_PARAMS_H1)
-        ratio_rb = relbin_h1.log_likelihood_ratio()
-        ratio_ex = exact_h1.log_likelihood_ratio()
+        ratio_rb = relbin_h1.log_likelihood_ratio(**INJECTION_PARAMS_H1)
+        ratio_ex = exact_h1.log_likelihood_ratio(**INJECTION_PARAMS_H1)
         np.testing.assert_allclose(ratio_rb, ratio_ex, rtol=0.01)
 
     def test_log_likelihood_ratio_far_params_lower(self, relbin_h1):
-        relbin_h1.parameters.update(INJECTION_PARAMS_H1)
-        ratio_inj = relbin_h1.log_likelihood_ratio()
+        ratio_inj = relbin_h1.log_likelihood_ratio(**INJECTION_PARAMS_H1)
         far = INJECTION_PARAMS_H1.copy()
         far["chirp_mass"] = INJECTION_PARAMS_H1["chirp_mass"] * 1.05
-        relbin_h1.parameters.update(far)
-        ratio_far = relbin_h1.log_likelihood_ratio()
+        ratio_far = relbin_h1.log_likelihood_ratio(**far)
         assert ratio_inj > ratio_far
 
     def test_h1_time_shift_lowers_llr(self, relbin_h1):
-        relbin_h1.parameters.update(INJECTION_PARAMS_H1)
-        ratio_inj = relbin_h1.log_likelihood_ratio()
+        ratio_inj = relbin_h1.log_likelihood_ratio(**INJECTION_PARAMS_H1)
         shifted = INJECTION_PARAMS_H1.copy()
         shifted["H1_time"] += 0.05
-        relbin_h1.parameters.update(shifted)
-        ratio_shifted = relbin_h1.log_likelihood_ratio()
+        ratio_shifted = relbin_h1.log_likelihood_ratio(**shifted)
         assert ratio_inj > ratio_shifted
 
     def test_log_likelihood_is_ratio_plus_noise(self, relbin_h1):
-        relbin_h1.parameters.update(INJECTION_PARAMS_H1)
-        llr = relbin_h1.log_likelihood_ratio()
+        llr = relbin_h1.log_likelihood_ratio(**INJECTION_PARAMS_H1)
         noise_ll = relbin_h1.noise_log_likelihood()
-        ll = relbin_h1.log_likelihood()
+        ll = relbin_h1.log_likelihood(**INJECTION_PARAMS_H1)
         np.testing.assert_allclose(ll, llr + noise_ll, rtol=1e-12)
 
     def test_snr_consistent_with_llr(self, relbin_h1, exact_h1):
         # At injection with zero noise: LLR ≈ 0.5 * SNR^2
-        exact_h1.parameters.update(INJECTION_PARAMS_H1)
         _, net_snr, *_ = exact_h1.compute_SNR_TD_and_waveform_data()
-        relbin_h1.parameters.update(INJECTION_PARAMS_H1)
-        llr = relbin_h1.log_likelihood_ratio()
+        llr = relbin_h1.log_likelihood_ratio(**INJECTION_PARAMS_H1)
         np.testing.assert_allclose(llr, 0.5 * net_snr**2, rtol=0.05)
 
     def test_bin_edges_monotone(self, relbin_h1):

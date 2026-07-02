@@ -65,7 +65,7 @@ class RelativeBinningLikelihood22(TimeDomainLikelihoodBase):
         priors=None,
         frame="geocent",
     ):
-        super().__init__(parameters={})
+        super().__init__()
         if frame not in ("geocent", "H1"):
             raise ValueError(f"frame must be 'geocent' or 'H1', got {frame!r}")
         self.frame = frame
@@ -475,24 +475,24 @@ class RelativeBinningLikelihood22(TimeDomainLikelihoodBase):
     # Likelihood
     # ------------------------------------------------------------------
 
-    def log_likelihood_ratio(self):
+    def log_likelihood_ratio(self, **parameters):
         log_like = 0
         Y_22 = self.SphericalHarmonics22(
-            self.parameters["theta_jn"], np.pi / 2 - self.parameters["phase"], 2
+            parameters["theta_jn"], np.pi / 2 - parameters["phase"], 2
         )
         Y_2_minus_2 = self.SphericalHarmonics2minus2(
-            self.parameters["theta_jn"], np.pi / 2 - self.parameters["phase"], -2
+            parameters["theta_jn"], np.pi / 2 - parameters["phase"], -2
         )
         for k, det in self.Detectors_list.items():
             A_0, A_1, B_0, B_1, B_2, B_3 = self.Summary_data_dict[k]
 
             h22 = self.waveform_22_modes(
-                self.parameters,
+                parameters,
                 self.time[self.bin_edge_index[k]]
-                - (self.parameters[self._time_key] - self.injection_parameters[self._time_key]),
+                - (parameters[self._time_key] - self.injection_parameters[self._time_key]),
             )
 
-            F_plus, F_cross = self._antenna_pattern(self.parameters, det)
+            F_plus, F_cross = self._antenna_pattern(parameters, det)
 
             waveform_ratio = h22 / self.h22_fiducial[k][self.bin_edge_index[k]]
             r_0 = (waveform_ratio[1:] + waveform_ratio[:-1]) / 2
@@ -604,8 +604,7 @@ class Set_Fiducial_parameters(ExactLikelihoodTimeDomain):
 
     def lnlike_scipy_maximize(self, parameters):
         parameters = self.get_parameter_dictionary_from_list(parameters)
-        self.parameters.update(parameters)
-        return -self.log_likelihood_ratio()
+        return -self.log_likelihood_ratio(**parameters)
 
     def get_parameter_list_from_dictionary(self, parameter_dict):
         return [parameter_dict[k] for k in self.parameters_to_be_updated]
@@ -621,8 +620,7 @@ class Set_Fiducial_parameters(ExactLikelihoodTimeDomain):
 
     def optimize_fiducial_parameters(self, iterations=5):
         parameters = self.fiducial_parameters.copy()
-        self.parameters.update(parameters)
-        old_ln_likelihood = self.log_likelihood_ratio()
+        old_ln_likelihood = self.log_likelihood_ratio(**parameters)
         priors_temp = self.priors.copy()
         for k in self.fiducial_parameters.keys():
             if k not in self.parameters_to_be_updated:
@@ -638,8 +636,7 @@ class Set_Fiducial_parameters(ExactLikelihoodTimeDomain):
             print(x_0)
             updated_params = self.get_parameter_dictionary_from_list(result.x)
             parameters.update(updated_params)
-            self.parameters.update(parameters)
-            new_ln_likelihood = self.log_likelihood_ratio()
+            new_ln_likelihood = self.log_likelihood_ratio(**parameters)
             print("New, old ln : ", new_ln_likelihood, old_ln_likelihood)
             if np.abs(new_ln_likelihood - old_ln_likelihood) < 0.1:
                 break

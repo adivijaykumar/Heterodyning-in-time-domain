@@ -124,5 +124,5 @@ class TimeDomainLikelihoodBase(bilby.Likelihood):
             )
         return self.noise_log_likelihood_value
 
-    def log_likelihood(self):
-        return self.log_likelihood_ratio() + self.noise_log_likelihood()
+    def log_likelihood(self, **parameters):
+        return self.log_likelihood_ratio(**parameters) + self.noise_log_likelihood()
