@@ -176,7 +176,7 @@ class PCGSolver(CovarianceSolver):
 
     def apply_C_inv(self, v: np.ndarray) -> np.ndarray:
         if v.ndim == 1:
-            x, info = cg(self._C_op, v, M=self._M_op, tol=self._tol, maxiter=self._maxiter)
+            x, info = cg(self._C_op, v, M=self._M_op, rtol=self._tol, maxiter=self._maxiter)
             if info != 0:
                 raise RuntimeError(f"PCG did not converge (info={info})")
             return x
